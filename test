@@ -1,0 +1,257 @@
+from flask import Flask, jsonify, request, make_response, abort
+from flask_restful import Api, Resource
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime
+from flask_cors import CORS  # Import the CORS module
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+#CORS(app, resources={r"/users/*": {"origins": "http://localhost:3000"}})
+
+app.config['JWT_SECRET_KEY'] = 'your_secret_key'
+
+# Configure MongoDB connection
+CONNECTION_STRING = 'mongodb+srv://kmrahman11:sylhet3100@cluster0.qwcawco.mongodb.net/?retryWrites=true&w=majority'
+mongo_client = MongoClient(CONNECTION_STRING)
+db = mongo_client['design_platform']
+
+api = Api(app)
+jwt = JWTManager(app)
+
+class UserResource(Resource):
+    def __init__(self, user_id=None, username=None, full_name=None, email=None, bio=None, profile_picture_url=None, location=None):
+        self.user_id_attr = user_id
+        self.username = username
+        self.full_name = full_name
+        self.email = email
+        self.bio = bio
+        self.profile_picture_url = profile_picture_url
+        self.location = location
+
+    def get(self, requested_user_id):
+        # Fetch user details from MongoDB based on requested_user_id
+        user_details = db.users.find_one({"user_id": requested_user_id})
+
+        if not user_details:
+            # If user details are not found, return a 404 response
+            abort(404, description="User not found")
+
+        # Construct the response JSON with user details
+        user_info = {
+            'user_id': user_details['user_id'],
+            'username': user_details['username'],
+            'full_name': user_details['full_name'],
+            'email': user_details['email'],
+            'bio': user_details['bio'],
+            'profile_picture_url': user_details['profile_picture_url'],
+            'location': user_details['location']
+        }
+
+        return jsonify(user_info)
+    
+class UserResource2(Resource):
+    def __init__(self, user_id=None, username=None, full_name=None, email=None, bio=None, profile_picture_url=None, location=None):
+        self.user_id = user_id
+        self.username = username
+        self.full_name = full_name
+        self.email = email
+        self.bio = bio
+        self.profile_picture_url = profile_picture_url
+        self.location = location
+
+    def get(self):
+        user_info = {
+            'user_id': self.user_id,
+            'username': self.username,
+            'full_name': self.full_name,
+            'email': self.email,
+            'bio': self.bio,
+            'profile_picture_url': self.profile_picture_url,
+            'location': self.location
+        }
+        return jsonify(user_info)
+    def get(self, user_id):
+        # Fetch user details from MongoDB based on user_id
+        user_details = db.users.find_one({"username": user_id})
+        print(user_details['user_id'])
+        if not user_details:
+            # If user details are not found, return a 404 response
+            abort(404, description="User not found")
+
+        # Construct the response JSON with user details
+        user_info = {
+            'user_id': user_details['user_id'],
+            'username': user_details['username'],
+            'full_name': user_details['full_name'],
+            'email': user_details['email'],
+            'bio': user_details['bio'],
+            'profile_picture_url': user_details['profile_picture_url'],
+            'location': user_details['location']
+        }
+
+        return jsonify(user_info)
+class UserResource1(Resource):
+    def __init__(self, user_id, username, full_name, email, bio, profile_picture_url, location, skills=None,
+                 employment_history=None, education=None, connections=None, posts=None, joined_date=None,
+                 social_media_links=None, public_visibility=True, followers=None, following=None):
+        self.user_id = user_id  # ObjectId
+        self.username = username  # str
+        self.full_name = full_name  # str
+        self.email = email  # str
+        self.bio = bio  # str
+        self.profile_picture_url = profile_picture_url  # str (URL)
+        self.location = location  # str
+        self.skills = skills or []  # list of str
+        self.employment_history = employment_history or []  # list of dict
+        self.education = education or []  # list of dict
+        self.connections = connections or []  # list of ObjectId
+        self.posts = posts or []  # list of dict
+        self.joined_date = joined_date or datetime.now()  # datetime
+        self.social_media_links = social_media_links or {}  # dict
+        self.public_visibility = public_visibility  # bool
+        self.followers = followers or []  # list of ObjectId
+        self.following = following or []  # list of ObjectId
+
+    def to_dict(self):
+        return {
+            'user_id': str(self.user_id),
+            'username': self.username,
+            'full_name': self.full_name,
+            'email': self.email,
+            'bio': self.bio,
+            'profile_picture_url': self.profile_picture_url,
+            'location': self.location,
+            'skills': self.skills,
+            'employment_history': self.employment_history,
+            'education': self.education,
+            'connections': [str(conn_id) for conn_id in self.connections],
+            'posts': self.posts,
+            'joined_date': str(self.joined_date),
+            'social_media_links': self.social_media_links,
+            'public_visibility': self.public_visibility,
+            'followers': [str(follower_id) for follower_id in self.followers],
+            'following': [str(following_id) for following_id in self.following],
+        }
+
+class CreateUserResource(Resource):
+    def post(self):
+        data = request.get_json()
+        user_id = db.users.insert_one(data).inserted_id
+        response = {'user_id': str(user_id)}
+        return make_response(jsonify(response), 201)
+
+class LoginResource(Resource):
+    def post(self):
+        data = request.get_json()
+        user = db.users.find_one(data)
+        print(user)
+        if user:
+            access_token = create_access_token(identity=str(user['_id']))
+            response = {'access_token': access_token}
+            return make_response(jsonify(response), 200)
+        else:
+            return make_response(jsonify({"error": "Invalid credentials"}), 401)
+
+class ConnectionResource(Resource):
+    def __init__(self, connection_id, user_id_1, user_id_2, connection_type, status, connection_date, mutual_connections=None, strength=None, metadata=None):
+        self.connection_id = connection_id  # ObjectId
+        self.user_id_1 = user_id_1  # ObjectId
+        self.user_id_2 = user_id_2  # ObjectId
+        self.connection_type = connection_type  # str
+        self.status = status  # str
+        self.connection_date = connection_date  # datetime
+        self.mutual_connections = mutual_connections or []  # list of ObjectId
+        self.strength = strength  # int (or another numeric type)
+        self.metadata = metadata or {}  # dict
+
+    def to_dict(self):
+        return {
+            'connection_id': str(self.connection_id),
+            'user_id_1': str(self.user_id_1),
+            'user_id_2': str(self.user_id_2),
+            'connection_type': self.connection_type,
+            'status': self.status,
+            'connection_date': str(self.connection_date),
+            'mutual_connections': [str(conn_id) for conn_id in self.mutual_connections],
+            'strength': self.strength,
+            'metadata': self.metadata,
+        }
+
+class CreateConnectionResource(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        data['connection_date'] = datetime.now()
+        connection_id = db.connections.insert_one(data).inserted_id
+        response = {'connection_id': str(connection_id)}
+        return make_response(jsonify(response), 201)
+
+class PostResource(Resource):
+    def get(self, post_id):
+        post = db.posts.find_one({'_id': ObjectId(post_id)})
+        if post:
+            return jsonify(post), 200
+        else:
+            return make_response(jsonify({"error": "Post not found"}), 404)
+
+class CreatePostResource(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        user_id = get_jwt_identity()  # Retrieve user_id from the JWT token
+        if user_id:
+            data['user_id'] = ObjectId(user_id)
+            data['post_date'] = datetime.now()
+            post_id = db.posts.insert_one(data).inserted_id
+            response = {'post_id': str(post_id)}
+            return make_response(jsonify(response), 201)
+        else:
+            return make_response(jsonify({"error": "Invalid user ID"}), 401)
+
+class LikeResource(Resource):
+    @jwt_required()
+    def post(self, post_id):
+        user_id = get_jwt_identity()
+        if user_id:
+            db.posts.update_one({'_id': ObjectId(post_id)}, {'$addToSet': {'likes': user_id}})
+            return make_response(jsonify({"message": "Post liked successfully"}), 200)
+        else:
+            return make_response(jsonify({"error": "Invalid user ID"}), 401)
+
+class CommentResource(Resource):
+    @jwt_required()
+    def post(self, post_id):
+        data = request.get_json()
+        user_id = get_jwt_identity()
+        if user_id:
+            comment = {'user_id': ObjectId(user_id), 'comment_text': data.get('comment_text'), 'comment_date': datetime.now()}
+            db.posts.update_one({'_id': ObjectId(post_id)}, {'$push': {'comments': comment}})
+            return make_response(jsonify({"message": "Comment added successfully"}), 200)
+        else:
+            return make_response(jsonify({"error": "Invalid user ID"}), 401)
+
+class ShareResource(Resource):
+    @jwt_required()
+    def post(self, post_id):
+        user_id = get_jwt_identity()
+        if user_id:
+            db.posts.update_one({'_id': ObjectId(post_id)}, {'$addToSet': {'shares': user_id}})
+            return make_response(jsonify({"message": "Post shared successfully"}), 200)
+        else:
+            return make_response(jsonify({"error": "Invalid user ID"}), 401)
+
+#api.add_resource(UserResource, '/users/<string:user_id>')
+api.add_resource(CreateUserResource, '/users')
+api.add_resource(ConnectionResource, '/connections/<string:connection_id>')
+api.add_resource(CreateConnectionResource, '/connections')
+api.add_resource(LoginResource, '/login')
+api.add_resource(PostResource, '/posts/<string:post_id>')
+api.add_resource(CreatePostResource, '/create-post')
+api.add_resource(LikeResource, '/posts/<string:post_id>/like')
+api.add_resource(CommentResource, '/posts/<string:post_id>/comment')
+api.add_resource(ShareResource, '/posts/<string:post_id>/share')
+api.add_resource(UserResource, '/users/<string:user_id>')
+if __name__ == '__main__':
+    app.run(debug=True)
